@@ -66,5 +66,76 @@ class Tls(unittest.TestCase):
         finally:
             check.fetch = orig
 
+class FieldRegressions(unittest.TestCase):
+    # Recover at </noscript> after an unclosed quoted attribute so the real body is counted.
+    @unittest.expectedFailure
+    def test_malformed_tracking_noscript_does_not_swallow_body(self):
+        broken = '<noscript><img hidden src="/pixel\n</noscript>'
+        html = GREEN.replace("</head>", broken + "</head>")
+        self.assertNotIn("js-only", checks(html))
+
+    def test_tracking_noscript_does_not_make_an_empty_shell_readable(self):
+        html = f"<html><head><title>Example</title><noscript>{BODY}</noscript></head><body><div id=root></div></body></html>"
+        self.assertIn("js-only", checks(html))
+
+    # Retry with a neutral HTTP user agent before describing an almost-empty response as site-wide.
+    @unittest.expectedFailure
+    def test_user_agent_specific_empty_shell_is_not_a_sitewide_finding(self):
+        from unittest.mock import patch
+        from check import audit
+        site = "https://example.com/"
+        shell = "<html><head><title>Example</title></head><body><div id=root></div></body></html>"
+        responses = [
+            (200, {}, shell, site),
+            (200, {}, GREEN, site),
+            (404, {}, "", site + "robots.txt"),
+            (404, {}, "", site + "llms.txt"),
+        ]
+        with patch("check.fetch", side_effect=responses):
+            self.assertNotIn("js-only", {f["check"] for f in audit(site)[1]})
+
+    def test_empty_shell_still_reports_js_only(self):
+        self.assertIn("js-only", checks("<div id=root></div><script>loadPage()</script>"))
+
+    # Skip controls hidden by the HTML hidden attribute or an explicit inline display:none.
+    @unittest.expectedFailure
+    def test_inline_hidden_implementation_field_ignored(self):
+        field = '<input name="_app_id" tabindex="-1" style="display:none">'
+        self.assertNotIn("form-labels", checks(GREEN.replace("<form>", "<form>" + field)))
+
+    def test_visible_implementation_named_field_still_requires_label(self):
+        field = '<input name="_app_id">'
+        self.assertIn("form-labels", checks(GREEN.replace("<form>", "<form>" + field)))
+
+    # Ignore explicitly assistive-tech-hidden controls that are also removed from tab order.
+    @unittest.expectedFailure
+    def test_offscreen_honeypot_is_ignored(self):
+        field = '<input name="website" tabindex="-1" aria-hidden="true" style="position:absolute;left:-5000px">'
+        self.assertNotIn("form-labels", checks(GREEN.replace("<form>", "<form>" + field)))
+
+    def test_regular_website_field_still_requires_label(self):
+        self.assertIn("form-labels", checks(GREEN.replace("<form>", '<form><input name="website">')))
+
+    # Treat a class as hidden only when the page CSS confirms display:none.
+    @unittest.expectedFailure
+    def test_css_hidden_honeypot_is_ignored(self):
+        html = GREEN.replace("</head>", "<style>.hidden { display: none }</style></head>")
+        field = '<input class="hidden" name="_gotcha" tabindex="-1">'
+        self.assertNotIn("form-labels", checks(html.replace("<form>", "<form>" + field)))
+
+    def test_similar_class_without_hiding_rule_still_requires_label(self):
+        field = '<input class="hidden" name="_gotcha" tabindex="-1">'
+        self.assertIn("form-labels", checks(GREEN.replace("<form>", "<form>" + field)))
+
+    # Keep fallback CAPTCHA controls separate from normal-page contact-field findings.
+    @unittest.expectedFailure
+    def test_noscript_captcha_is_not_a_normal_page_field(self):
+        fallback = '<noscript><textarea name="g-recaptcha-response" placeholder="CAPTCHA response"></textarea></noscript>'
+        self.assertNotIn("form-labels", checks(GREEN.replace("<form>", "<form>" + fallback)))
+
+    def test_visible_captcha_field_still_requires_label(self):
+        visible = '<textarea name="captcha" placeholder="CAPTCHA response"></textarea>'
+        self.assertIn("form-labels", checks(GREEN.replace("<form>", "<form>" + visible)))
+
 if __name__ == "__main__":
     unittest.main()
