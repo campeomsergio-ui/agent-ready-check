@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """agent-ready-check: can AI assistants and agents read this business website? Reads public pages only."""
-import json, re, sys, urllib.request, urllib.robotparser, urllib.error
+import json, re, sys, urllib.parse, urllib.request, urllib.error
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
@@ -99,10 +99,50 @@ def f(sev, check, title, detail, fix, evidence):
     return {"severity": sev, "check": check, "title": title, "detail": detail, "fix": fix, "evidence": evidence}
 
 
+def robots_groups(text):
+    """RFC 9309 groups: consecutive user-agent lines share the rules that follow them."""
+    groups, agents, rules, last = [], [], [], None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if ":" not in line:
+            continue
+        key, val = (x.strip() for x in line.split(":", 1))
+        key = key.lower()
+        if key == "user-agent":
+            if last == "rule":
+                groups.append((agents, rules)); agents, rules = [], []
+            agents.append(val.lower()); last = "agent"
+        elif key in ("allow", "disallow") and agents:
+            rules.append((key == "allow", val)); last = "rule"
+    if agents:
+        groups.append((agents, rules))
+    return groups
+
+
+def robots_allows(text, bot, url):
+    """RFC 9309 / Google matching: most specific user-agent group, longest matching rule, allow wins ties,
+    * and $ wildcards. (urllib.robotparser turns 'Disallow: /?' into 'Disallow: /' and blocks everything.)"""
+    parts = urllib.parse.urlsplit(url)
+    path = (parts.path or "/") + ("?" + parts.query if parts.query else "")
+    groups = robots_groups(text)
+    name = bot.lower()
+    rules = [r for a, rs in groups if any(x != "*" and x in name for x in a) for r in rs]
+    if not any(any(x != "*" and x in name for x in a) for a, _ in groups):
+        rules = [r for a, rs in groups if "*" in a for r in rs]
+    best = None
+    for allow, pat in rules:
+        if not pat:
+            continue
+        rx = "^" + re.escape(pat).replace(r"\*", ".*")
+        rx = rx[:-2] + "$" if rx.endswith(r"\$") else rx
+        if re.match(rx, path) and (best is None or len(pat) > best[0] or (len(pat) == best[0] and allow)):
+            best = (len(pat), allow)
+    return True if best is None else best[1]
+
+
 def check_robots(robots_txt, page_url):
     out = []
-    rp = urllib.robotparser.RobotFileParser(); rp.parse(robots_txt.splitlines())
-    blocked = {b: k for b, k in BOTS.items() if not rp.can_fetch(b, page_url)}
+    blocked = {b: k for b, k in BOTS.items() if not robots_allows(robots_txt, b, page_url)}
     search = sorted(b for b, k in blocked.items() if k == "search")
     train = sorted(b for b, k in blocked.items() if k == "training")
     if search:

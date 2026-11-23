@@ -157,5 +157,18 @@ class FetchRetry(unittest.TestCase):
         self.assertEqual(self.run_with(403)[0], 403)
 
 
+class RobotsRfc9309(unittest.TestCase):
+    """Field FP 23 Nov (frikitek.com): 'Disallow: /?' was read as 'Disallow: /'."""
+    def test_green_query_only_rule_allows_home(self):
+        self.assertFalse(check_robots("User-agent: *\nDisallow: /?\nDisallow: */feed/\n", "https://x.test/"))
+
+    def test_red_catch_all_block_still_flagged(self):
+        out = check_robots("User-agent: Googlebot\nDisallow:\n\nUser-agent: *\nDisallow: /\n", "https://x.test/")
+        self.assertTrue(any(f["severity"] == "high" for f in out))
+
+    def test_allow_dollar_beats_disallow_all_on_home(self):
+        self.assertTrue(check.robots_allows("User-agent: *\nDisallow: /\nAllow: /$\n", "GPTBot", "https://x.test/"))
+
+
 if __name__ == "__main__":
     unittest.main()
