@@ -70,8 +70,22 @@ class Page(HTMLParser):
                 self.cur_btn[1] += d
 
 
+BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
+
+
 def fetch(url, timeout=15):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,*/*"})
+    """Fetch as ourselves; if refused (403/429/406), retry once as a browser so a firewall
+    that only dislikes unknown tools isn't reported as a site that doesn't load."""
+    status, headers, body, final = _get(url, UA, timeout)
+    if status in (403, 406, 429):
+        retry = _get(url, BROWSER_UA, timeout)
+        if retry[0] == 200:
+            return retry
+    return status, headers, body, final
+
+
+def _get(url, ua, timeout):
+    req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept": "text/html,*/*"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, dict(r.headers), r.read(2_000_000).decode(r.headers.get_content_charset() or "utf-8", "ignore"), r.url

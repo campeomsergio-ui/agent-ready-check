@@ -1,4 +1,5 @@
 import sys, unittest
+from unittest.mock import patch
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from check import check_page, check_robots, suggest_jsonld
@@ -136,6 +137,24 @@ class FieldRegressions(unittest.TestCase):
     def test_visible_captcha_field_still_requires_label(self):
         visible = '<textarea name="captcha" placeholder="CAPTCHA response"></textarea>'
         self.assertIn("form-labels", checks(GREEN.replace("<form>", "<form>" + visible)))
+
+class FetchRetry(unittest.TestCase):
+    """Field FP 23 Nov: a WAF 403'd our UA but served browsers and AI bots; 'did not load' was wrong."""
+    def run_with(self, browser_status):
+        calls = []
+        def fake(url, ua, timeout):
+            calls.append(ua)
+            return (403, {}, "", url) if ua == check.UA else (browser_status, {}, "<html>ok</html>", url)
+        with patch("check._get", side_effect=fake):
+            return check.fetch("https://example.test/")[0], calls
+
+    def test_green_browser_ok_means_loaded(self):
+        status, calls = self.run_with(200)
+        self.assertEqual((status, len(calls)), (200, 2))
+
+    def test_red_browser_also_refused_stays_403(self):
+        self.assertEqual(self.run_with(403)[0], 403)
+
 
 if __name__ == "__main__":
     unittest.main()
