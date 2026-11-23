@@ -56,5 +56,15 @@ class Pairs(unittest.TestCase):
         self.assertEqual(check_robots("User-agent: *\nDisallow: /admin\n", "https://x/"), [])
         self.assertEqual(len(check_robots("User-agent: *\nDisallow: /\n", "https://x/")), 2)
 
+class Tls(unittest.TestCase):
+    def test_bad_cert_named(self):
+        import check
+        orig = check.fetch
+        check.fetch = lambda u, timeout=15: (0, {}, "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate>", u)
+        try:
+            self.assertEqual(check.audit("x.test")[1][0]["check"], "tls")
+        finally:
+            check.fetch = orig
+
 if __name__ == "__main__":
     unittest.main()

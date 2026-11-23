@@ -183,6 +183,9 @@ def audit(url, suggest=False):
     if "://" not in url:
         url = "https://" + url
     status, headers, html, final = fetch(url)
+    if status == 0 and "CERTIFICATE_VERIFY_FAILED" in html:
+        why = "self-signed" if "self-signed" in html else ("expired" if "expired" in html else "invalid")
+        return final, [f("high", "tls", f"HTTPS certificate is {why}", html[:120], "Install a valid certificate (e.g. free Let's Encrypt); browsers warn visitors and many crawlers stop here.", "direct TLS check")]
     if status != 200:
         return final, [f("high", "fetch", "Home page did not load", f"HTTP {status} {html[:80]}", "Check the site is up for non-browser clients.", "direct fetch")]
     root = f"{urlparse(final).scheme}://{urlparse(final).netloc}/"
