@@ -50,6 +50,14 @@ class Pairs(unittest.TestCase):
         self.assertNotIn("button-names", checks(GREEN.replace("<button>Send</button>", "<button aria-label=Send><svg></svg></button>")))
     def test_no_contact(self):
         self.assertIn("contact", checks(GREEN.replace("Call 0113 496 0000 any weekday.", "We are great at plumbing work.")))
+    def test_robots_allowlist_pattern_fix(self):
+        red = "User-agent: Googlebot\nDisallow:\nCrawl-delay: 300\n\nUser-agent: *\nDisallow: /\n"
+        r = check_robots(red, "https://x/")
+        self.assertTrue(r and "Allow-list pattern" in r[0]["fix"])
+        green = "User-agent: OAI-SearchBot\nDisallow: /\n"
+        r = check_robots(green, "https://x/")
+        self.assertTrue(r and "Allow-list pattern" not in r[0]["fix"])
+
     def test_robots_search_vs_training(self):
         r = check_robots("User-agent: OAI-SearchBot\nDisallow: /\n", "https://x/")
         self.assertEqual([x["severity"] for x in r], ["high"])

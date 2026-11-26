@@ -146,8 +146,11 @@ def check_robots(robots_txt, page_url):
     search = sorted(b for b, k in blocked.items() if k == "search")
     train = sorted(b for b, k in blocked.items() if k == "training")
     if search:
-        out.append(f("high", "robots", "robots.txt blocks AI search/answer crawlers", ", ".join(search),
-                     "Allow these user-agents if you want to be found and quoted in ChatGPT/Claude/Perplexity answers.", "vendor crawler docs"))
+        fix = "Allow these user-agents if you want to be found and quoted in ChatGPT/Claude/Perplexity answers."
+        if robots_allows(robots_txt, "Googlebot", page_url) and not robots_allows(robots_txt, "SomeNewAgent", page_url):
+            fix = ("Allow-list pattern: only named search engines may crawl and 'User-agent: *' is 'Disallow: /'. "
+                   "Add a group per assistant (" + ", ".join(search) + ") with an empty 'Disallow:', or open the * group.")
+        out.append(f("high", "robots", "robots.txt blocks AI search/answer crawlers", ", ".join(search), fix, "vendor crawler docs"))
     if train:
         out.append(f("info", "robots", "robots.txt blocks AI training crawlers", ", ".join(train),
                      "A business choice; blocking training bots does not stop live answers.", "vendor crawler docs"))
